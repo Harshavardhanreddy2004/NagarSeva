@@ -1,0 +1,68 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: nagarseva-postgres
+    environment:
+      POSTGRES_USER: nagarseva
+      POSTGRES_PASSWORD: nagarseva_pass
+      POSTGRES_DB: nagarseva
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nagarseva"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - nagarseva-network
+
+  # FastAPI Backend
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: nagarseva-backend
+    environment:
+      DATABASE_URL: postgresql://nagarseva:nagarseva_pass@postgres:5432/nagarseva
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      JWT_SECRET: ${JWT_SECRET:-nagarseva-secret-key-change-in-production}
+      CORS_ORIGINS: '["http://localhost:3000","http://localhost:5173","http://localhost"]'
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./backend/uploads:/app/uploads
+    networks:
+      - nagarseva-network
+    restart: unless-stopped
+
+  # React Frontend
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    container_name: nagarseva-frontend
+    environment:
+      VITE_API_URL: http://localhost:8000
+    ports:
+      - "3000:3000"
+      - "5173:5173"
+    depends_on:
+      - backend
+    networks:
+      - nagarseva-network
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+
+networks:
+  nagarseva-network:
+    driver: bridge
