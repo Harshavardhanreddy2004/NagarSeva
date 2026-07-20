@@ -26,7 +26,11 @@ class Settings(BaseSettings):
     max_file_size: int = 10 * 1024 * 1024  # 10MB
 
     # CORS
-    cors_origins: list = ["http://localhost:5173", "http://localhost:3000"]
+    cors_origins: list = [
+    "http://localhost:5173",
+    "http://localhost:3000",
+    "https://nagar-seva-chi.vercel.app",
+]
 
     class Config:
         env_file = ".env"
