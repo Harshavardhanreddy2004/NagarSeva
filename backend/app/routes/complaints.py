@@ -1,15 +1,16 @@
 """Complaint routes."""
-from fastapi import APIRouter, Depends, HTTPException, File, UploadFile, Form
-from sqlalchemy.orm import Session
+from fastapi import APIRouter, Depends, HTTPException, File, UploadFile, Form, Header
+from sqlalchemy.orm import Session, selectinload
 import os
 import shutil
 from pathlib import Path
+from typing import Optional
 
 from app.database import get_db
 from app.config import settings
 from app.auth import decode_token
 from app.models import Complaint
-from app.schemas.complaint import ComplaintCreate, ComplaintResponse, ComplaintUpdate, DashboardStats
+from app.schemas.complaint import ComplaintResponse, DashboardStats, ComplaintUpdate
 from app.services.complaint_service import ComplaintService
 from app.services.ai_service import AIService
 
@@ -19,21 +20,24 @@ router = APIRouter(prefix="/api/complaints", tags=["complaints"])
 ai_service = AIService()
 
 
-def get_current_user(authorization: str = None) -> int:
+def get_current_user(authorization: str = Header(None)) -> int:
     """Extract user ID from JWT token."""
     if not authorization:
         raise HTTPException(status_code=401, detail="Missing authorization header")
-    
+
     try:
         scheme, token = authorization.split()
+
         if scheme.lower() != "bearer":
             raise HTTPException(status_code=401, detail="Invalid authorization scheme")
-        
+
         token_data = decode_token(token)
-        if not token_data:
+
+        if token_data is None:
             raise HTTPException(status_code=401, detail="Invalid token")
-        
+
         return token_data.user_id
+
     except ValueError:
         raise HTTPException(status_code=401, detail="Invalid authorization header format")
 
@@ -49,35 +53,41 @@ async def create_complaint(
     location_address: str = Form(None),
     description: str = Form(...),
     image: UploadFile = File(None),
-    authorization: str = None,
+    user_id: int = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """Create a new complaint with optional image upload."""
-    user_id = get_current_user(authorization)
-    
+
     image_path = None
     detected_issue = None
     risk_level = None
-    
-    # Handle image upload
+
     if image:
         try:
-            # Save image
-            file_path = Path(settings.upload_directory) / f"{user_id}_{image.filename}"
-            with open(file_path, "wb") as f:
-                shutil.copyfileobj(image.file, f)
-            
-            image_path = str(file_path)
-            
-            # Analyze image with AI
-            analysis = ai_service.analyze_image(image_path)
+            # Create uploads folder if it doesn't exist
+            os.makedirs(settings.upload_directory, exist_ok=True)
+
+            # Save image with unique filename
+            filename = f"{user_id}_{image.filename}"
+            file_path = Path(settings.upload_directory) / filename
+
+            with open(file_path, "wb") as buffer:
+                shutil.copyfileobj(image.file, buffer)
+
+            # Store RELATIVE path in database
+            image_path = f"uploads/{filename}"
+
+            # AI analysis
+            analysis = ai_service.analyze_image(str(file_path))
             detected_issue = analysis.detected_issue
             risk_level = analysis.risk_level
-            
+
         except Exception as e:
-            raise HTTPException(status_code=400, detail=f"Error processing image: {str(e)}")
-    
-    # Create complaint
+            raise HTTPException(
+                status_code=400,
+                detail=f"Image upload failed: {str(e)}"
+            )
+
     try:
         complaint = ComplaintService.create_complaint(
             db=db,
@@ -90,22 +100,31 @@ async def create_complaint(
             detected_issue=detected_issue,
             risk_level=risk_level,
         )
+
+        # Load relationships before returning
+        complaint.images
+        complaint.history
+
         return ComplaintResponse.from_orm(complaint)
+
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(
+            status_code=400,
+            detail=str(e)
+        )
 
 
-@router.get("", response_model=dict)
+@router.get("/", response_model=list[ComplaintResponse])
 def list_complaints(
-    status: str = None,
-    priority: str = None,
-    user_id: int = None,
+    user_id: Optional[int] = None,
+    status: Optional[str] = None,
+    priority: Optional[str] = None,
     limit: int = 50,
     offset: int = 0,
     db: Session = Depends(get_db),
 ):
     """List complaints with optional filters."""
-    complaints, total = ComplaintService.list_complaints(
+    complaints, _ = ComplaintService.list_complaints(
         db=db,
         user_id=user_id,
         status=status,
@@ -113,49 +132,52 @@ def list_complaints(
         limit=limit,
         offset=offset,
     )
-    
-    return {
-        "total": total,
-        "complaints": [ComplaintResponse.from_orm(c) for c in complaints],
-    }
+
+    return [ComplaintResponse.from_orm(c) for c in complaints]
 
 
-@router.get("/{complaint_id}", response_model=ComplaintResponse)
-def get_complaint(complaint_id: int, db: Session = Depends(get_db)):
-    """Get a specific complaint."""
-    complaint = ComplaintService.get_complaint(db, complaint_id)
+@router.get("/{id}", response_model=ComplaintResponse)
+def get_complaint(id: int, db: Session = Depends(get_db)):
+    """Get a specific complaint by ID."""
+    complaint = ComplaintService.get_complaint(db=db, complaint_id=id)
     if not complaint:
         raise HTTPException(status_code=404, detail="Complaint not found")
+
     return ComplaintResponse.from_orm(complaint)
 
 
-@router.patch("/{complaint_id}/status", response_model=ComplaintResponse)
+@router.patch("/{id}/status", response_model=ComplaintResponse)
 def update_complaint_status(
-    complaint_id: int,
-    status_update: dict,
+    id: int,
+    update: ComplaintUpdate,
     db: Session = Depends(get_db),
 ):
-    """Update complaint status."""
+    """Update the status of a complaint."""
+    if not update.status:
+        raise HTTPException(status_code=400, detail="Status is required")
+
     try:
         complaint = ComplaintService.update_complaint_status(
             db=db,
-            complaint_id=complaint_id,
-            new_status=status_update.get("status"),
-            change_reason=status_update.get("reason"),
+            complaint_id=id,
+            new_status=update.status,
+            change_reason=update.description or None,
         )
+
         return ComplaintResponse.from_orm(complaint)
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
 
 @router.get("/dashboard/stats", response_model=DashboardStats)
-def get_dashboard_stats(db: Session = Depends(get_db)):
+def dashboard_stats(db: Session = Depends(get_db)):
     """Get dashboard statistics."""
     return ComplaintService.get_dashboard_stats(db)
 
 
-@router.get("/heatmap/data", response_model=dict)
-def get_heatmap_data(db: Session = Depends(get_db)):
-    """Get heatmap data for complaint density."""
-    heatmap_data = ComplaintService.get_heatmap_data(db)
-    return {"heatmap_data": heatmap_data}
+@router.get("/heatmap/data")
+def heatmap_data(db: Session = Depends(get_db)):
+    """Get safety heatmap grid data."""
+    return {"heatmap_data": ComplaintService.get_heatmap_data(db)}

@@ -27,7 +27,7 @@ export default function MyComplaints() {
           status: filters.status,
           priority: filters.priority,
         })
-        dispatch(setComplaints(response.data.complaints || []))
+        dispatch(setComplaints(response.data || []))
         setError(null)
       } catch (err: any) {
         const errorMessage = err.response?.data?.detail || 'Failed to fetch complaints'
@@ -38,6 +38,13 @@ export default function MyComplaints() {
     }
 
     fetchComplaints()
+
+    const onComplaintStatusChanged = () => {
+      fetchComplaints()
+    }
+
+    window.addEventListener('complaint-status-changed', onComplaintStatusChanged)
+    return () => window.removeEventListener('complaint-status-changed', onComplaintStatusChanged)
   }, [user, filters, dispatch, navigate])
 
   const statusOptions = [
@@ -66,8 +73,7 @@ export default function MyComplaints() {
   }
 
   const handleComplaintClick = (id: number) => {
-    // Could navigate to detail view if available
-    console.log('Clicked complaint:', id)
+    navigate(`/complaint/${id}`)
   }
 
   return (

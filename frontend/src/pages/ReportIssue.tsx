@@ -17,6 +17,7 @@ export default function ReportIssue() {
   const [imagePreview, setImagePreview] = useState<string | null>(null)
   const [latitude, setLatitude] = useState<number | null>(null)
   const [longitude, setLongitude] = useState<number | null>(null)
+  const [locationAddress, setLocationAddress] = useState<string | null>(null)
   const [description, setDescription] = useState('')
   const [issueType, setIssueType] = useState('pothole')
   const [error, setError] = useState<string | null>(null)
@@ -55,9 +56,10 @@ export default function ReportIssue() {
     setImagePreview(preview)
   }
 
-  const handleLocationSelected = (lat: number, lon: number) => {
+  const handleLocationSelected = (lat: number, lon: number, address?: string) => {
     setLatitude(lat)
     setLongitude(lon)
+    setLocationAddress(address ?? null)
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -86,6 +88,9 @@ export default function ReportIssue() {
       formData.append('image', image)
       formData.append('location_lat', latitude.toString())
       formData.append('location_lon', longitude.toString())
+      if (locationAddress) {
+        formData.append('location_address', locationAddress)
+      }
       formData.append('description', description)
       formData.append('issue_type', issueType)
 
@@ -100,6 +105,7 @@ export default function ReportIssue() {
       setDescription('')
       setLatitude(null)
       setLongitude(null)
+      setLocationAddress(null)
 
       // Redirect to my complaints after 2 seconds
       setTimeout(() => {

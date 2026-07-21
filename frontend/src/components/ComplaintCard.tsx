@@ -1,5 +1,4 @@
 import React from 'react'
-import { useNavigate } from 'react-router-dom'
 
 interface Complaint {
   id: number
@@ -11,9 +10,10 @@ interface Complaint {
   location_lon: number
   location_address: string | null
   created_at: string
-  images?: Array<{
+  image_path?: string
+  images?: {
     image_path: string
-  }>
+  }[]
 }
 
 interface ComplaintCardProps {
@@ -21,84 +21,127 @@ interface ComplaintCardProps {
   onClick?: (id: number) => void
 }
 
-export default function ComplaintCard({ complaint, onClick }: ComplaintCardProps) {
-  const navigate = useNavigate()
-  const imageUrl = complaint.images?.[0]?.image_path
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
+
+export default function ComplaintCard({
+  complaint,
+  onClick,
+}: ComplaintCardProps) {
+
+  let imageUrl = ""
+
+  if (complaint.image_path) {
+    imageUrl = `${API_URL}/${complaint.image_path}`
+  } else if (complaint.images?.length) {
+    imageUrl = `${API_URL}/${complaint.images[0].image_path}`
+  }
 
   const getStatusColor = (status: string) => {
-    const colors: Record<string, string> = {
-      submitted: 'bg-blue-100 text-blue-800',
-      assigned: 'bg-yellow-100 text-yellow-800',
-      in_progress: 'bg-purple-100 text-purple-800',
-      resolved: 'bg-green-100 text-green-800',
-      rejected: 'bg-red-100 text-red-800',
+    switch (status) {
+      case "submitted":
+        return "bg-blue-100 text-blue-800"
+      case "assigned":
+        return "bg-yellow-100 text-yellow-800"
+      case "in_progress":
+        return "bg-purple-100 text-purple-800"
+      case "resolved":
+        return "bg-green-100 text-green-800"
+      case "rejected":
+        return "bg-red-100 text-red-800"
+      default:
+        return "bg-gray-100 text-gray-800"
     }
-    return colors[status] || colors.submitted
   }
 
   const getPriorityColor = (priority: string) => {
-    const colors: Record<string, string> = {
-      low: 'text-green-600',
-      medium: 'text-yellow-600',
-      high: 'text-orange-600',
-      critical: 'text-red-600',
+    switch (priority) {
+      case "low":
+        return "text-green-600"
+      case "medium":
+        return "text-yellow-600"
+      case "high":
+        return "text-orange-600"
+      case "critical":
+        return "text-red-600"
+      default:
+        return "text-gray-600"
     }
-    return colors[priority] || colors.medium
-  }
-
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('en-IN')
   }
 
   return (
     <div
       onClick={() => onClick?.(complaint.id)}
-      className="bg-white rounded-lg shadow-md hover:shadow-lg transition cursor-pointer overflow-hidden"
+      className="bg-white rounded-[28px] shadow-[0_24px_80px_rgba(15,23,42,0.08)] hover:-translate-y-1 hover:shadow-[0_28px_100px_rgba(15,23,42,0.12)] cursor-pointer overflow-hidden transition-transform duration-300"
     >
-      <div className="flex flex-col sm:flex-row">
-        {/* Image */}
-        {imageUrl && (
-          <div className="sm:w-32 sm:h-32 h-48 bg-gray-200 flex-shrink-0">
+      <div className="flex flex-col md:flex-row">
+
+        <div className="w-full md:w-48 h-48 bg-slate-100 flex-shrink-0">
+          {imageUrl ? (
             <img
               src={imageUrl}
               alt="Complaint"
               className="w-full h-full object-cover"
+              onError={(e) => {
+                e.currentTarget.src =
+                  "https://placehold.co/400x300?text=No+Image"
+              }}
             />
-          </div>
-        )}
+          ) : (
+            <div className="w-full h-full flex items-center justify-center text-slate-500 text-sm">
+              No Image Available
+            </div>
+          )}
+        </div>
 
-        {/* Content */}
-        <div className="flex-1 p-4 flex flex-col justify-between">
-          {/* Header */}
-          <div>
-            <div className="flex items-start justify-between gap-4 mb-2">
-              <div>
-                <p className="text-sm text-gray-500">Complaint #{complaint.id}</p>
-                <h3 className="text-lg font-semibold text-gray-800 line-clamp-2">
-                  {complaint.description}
-                </h3>
-              </div>
-              <span className={`px-3 py-1 rounded-full text-xs font-semibold whitespace-nowrap ${getStatusColor(complaint.status)}`}>
-                {complaint.status.replace('_', ' ')}
-              </span>
+        <div className="flex-1 p-6 space-y-4">
+
+          <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
+
+            <div>
+              <p className="text-slate-500 text-sm uppercase tracking-[0.2em] mb-2">
+                Complaint #{complaint.id}
+              </p>
+
+              <h2 className="font-semibold text-2xl text-slate-900 leading-tight">
+                {complaint.description}
+              </h2>
             </div>
 
-            <p className="text-sm text-gray-600 mb-3">
-              📍 {complaint.location_address || `(${complaint.location_lat.toFixed(4)}, ${complaint.location_lon.toFixed(4)})`}
-            </p>
-          </div>
-
-          {/* Footer */}
-          <div className="flex items-center justify-between pt-3 border-t border-gray-100">
-            <div className="flex items-center gap-3">
-              <span className={`text-sm font-semibold ${getPriorityColor(complaint.priority)}`}>
-                Priority: {complaint.priority}
-              </span>
-            </div>
-            <span className="text-xs text-gray-500">
-              {formatDate(complaint.created_at)}
+            <span
+              className={`px-4 py-2 rounded-full text-xs font-semibold uppercase tracking-[0.18em] ${getStatusColor(
+                complaint.status
+              )}`}
+            >
+              {complaint.status.replace('_', ' ')}
             </span>
+
           </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm sm:text-base">
+            <div className="rounded-2xl bg-slate-50 p-4">
+              <p className="text-slate-500 mb-1">Priority</p>
+              <p className={`font-semibold ${getPriorityColor(complaint.priority)}`}>
+                {complaint.priority}
+              </p>
+            </div>
+            <div className="rounded-2xl bg-slate-50 p-4">
+              <p className="text-slate-500 mb-1">Created</p>
+              <p className="font-semibold text-slate-700">
+                {new Date(complaint.created_at).toLocaleDateString('en-IN', {
+                  day: 'numeric', month: 'short', year: 'numeric',
+                })}
+              </p>
+            </div>
+            <div className="rounded-2xl bg-slate-50 p-4 md:col-span-2">
+              <p className="text-slate-500 mb-1">Location</p>
+              <p className="font-semibold text-slate-700">
+                {complaint.location_address
+                  ? complaint.location_address
+                  : `Lat: ${complaint.location_lat.toFixed(4)}, Lon: ${complaint.location_lon.toFixed(4)}`}
+              </p>
+            </div>
+          </div>
+
         </div>
       </div>
     </div>

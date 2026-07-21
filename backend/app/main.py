@@ -19,7 +19,17 @@ app = FastAPI(
     description=settings.api_description,
     version=settings.api_version,
 )
+import os
 
+# Create uploads directory if it doesn't exist
+os.makedirs(settings.upload_directory, exist_ok=True)
+
+# Serve uploaded images
+app.mount(
+    "/uploads",
+    StaticFiles(directory=settings.upload_directory),
+    name="uploads",
+)
 
 # Startup event to seed database
 @app.on_event("startup")

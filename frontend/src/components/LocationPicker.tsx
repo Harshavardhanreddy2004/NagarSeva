@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { getGeolocation } from '../services/geolocation'
 
 interface LocationPickerProps {
-  onLocationSelected: (lat: number, lon: number) => void
+  onLocationSelected: (lat: number, lon: number, address?: string) => void
   disabled?: boolean
 }
 
@@ -16,29 +16,57 @@ export default function LocationPicker({ onLocationSelected, disabled = false }:
 
   useEffect(() => {
     if (lat && lon) {
-      onLocationSelected(parseFloat(lat), parseFloat(lon))
+      const latitude = parseFloat(lat)
+      const longitude = parseFloat(lon)
+      if (!isNaN(latitude) && !isNaN(longitude)) {
+        onLocationSelected(latitude, longitude, locationName || undefined)
+      }
+    }
+  }, [lat, lon, locationName])
+
+  useEffect(() => {
+    if (!lat || !lon) {
+      return
+    }
+
+    const latitude = parseFloat(lat)
+    const longitude = parseFloat(lon)
+    if (isNaN(latitude) || isNaN(longitude)) {
+      return
+    }
+
+    const timeout = window.setTimeout(() => {
+      fetchLocationName(latitude, longitude)
+    }, 500)
+
+    return () => {
+      window.clearTimeout(timeout)
     }
   }, [lat, lon])
 
-  const handleGetGPS = async () => {
-    setGpsLoading(true)
-    setError(null)
+  const fetchLocationName = async (latitude: number, longitude: number) => {
     try {
-      const location = await getGeolocation()
-      setLat(location.latitude.toString())
-      setLon(location.longitude.toString())
-      setUseGPS(true)
-      // Reverse geocode to get location name (simple approximation)
-      setLocationName(`Lat: ${location.latitude.toFixed(4)}, Lon: ${location.longitude.toFixed(4)}`)
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${latitude}&lon=${longitude}`,
+        {
+          headers: {
+            'User-Agent': 'NagarSeva/1.0',
+          },
+        }
+      )
+
+      if (!response.ok) {
+        throw new Error('Failed to fetch address')
+      }
+
+      const data = await response.json()
+      if (data?.display_name) {
+        setLocationName(data.display_name)
+      } else {
+        setLocationName(`Lat: ${latitude.toFixed(4)}, Lon: ${longitude.toFixed(4)}`)
+      }
     } catch (err) {
-      setError('Could not access your location. Please enter manually.')
-      console.error(err)
-      // Fallback to Mumbai
-      setLat('19.0760')
-      setLon('72.8777')
-      setLocationName('Mumbai, Maharashtra (default)')
-    } finally {
-      setGpsLoading(false)
+      setLocationName(`Lat: ${latitude.toFixed(4)}, Lon: ${longitude.toFixed(4)}`)
     }
   }
 
@@ -81,6 +109,26 @@ export default function LocationPicker({ onLocationSelected, disabled = false }:
     setError(null)
   }
 
+  const handleGetGPS = async () => {
+    setGpsLoading(true)
+    setError(null)
+    try {
+      const location = await getGeolocation()
+      setLat(location.latitude.toString())
+      setLon(location.longitude.toString())
+      setUseGPS(true)
+    } catch (err) {
+      setError('Could not access your location. Please enter manually.')
+      console.error(err)
+      // Fallback to Mumbai
+      setLat('19.0760')
+      setLon('72.8777')
+      setLocationName('Mumbai, Maharashtra (default)')
+    } finally {
+      setGpsLoading(false)
+    }
+  }
+
   return (
     <div className="w-full space-y-4">
       <div className="flex gap-3 items-center mb-4">
@@ -114,7 +162,11 @@ export default function LocationPicker({ onLocationSelected, disabled = false }:
             min="-90"
             max="90"
             value={lat}
-            onChange={handleLatChange}
+            onChange={(e) => {
+              setLat(e.target.value)
+              setUseGPS(false)
+              validateCoordinates(e.target.value, lon)
+            }}
             disabled={disabled}
             placeholder="-90 to 90"
             className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
@@ -130,7 +182,11 @@ export default function LocationPicker({ onLocationSelected, disabled = false }:
             min="-180"
             max="180"
             value={lon}
-            onChange={handleLonChange}
+            onChange={(e) => {
+              setLon(e.target.value)
+              setUseGPS(false)
+              validateCoordinates(lat, e.target.value)
+            }}
             disabled={disabled}
             placeholder="-180 to 180"
             className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"

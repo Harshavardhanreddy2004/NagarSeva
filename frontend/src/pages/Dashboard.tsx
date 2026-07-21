@@ -37,36 +37,43 @@ export default function Dashboard() {
   const [statusFilter, setStatusFilter] = useState<string | null>(null)
   const [priorityFilter, setPriorityFilter] = useState<string | null>(null)
 
+  const fetchData = async () => {
+    setLoading(true)
+    try {
+      const [statsRes, complaintsRes] = await Promise.all([
+        complaintApi.getDashboardStats(),
+        complaintApi.listComplaints({
+          status: statusFilter,
+          priority: priorityFilter,
+          limit: 100,
+        }),
+      ])
+
+      setStats(statsRes.data)
+      setComplaints(complaintsRes.data || [])
+      setError(null)
+    } catch (err: any) {
+      const errorMessage = err.response?.data?.detail || 'Failed to fetch data'
+      setError(errorMessage)
+    } finally {
+      setLoading(false)
+    }
+  }
+
   useEffect(() => {
     if (!user) {
       navigate('/login')
       return
     }
 
-    const fetchData = async () => {
-      setLoading(true)
-      try {
-        const [statsRes, complaintsRes] = await Promise.all([
-          complaintApi.getDashboardStats(),
-          complaintApi.listComplaints({
-            status: statusFilter,
-            priority: priorityFilter,
-            limit: 100,
-          }),
-        ])
+    fetchData()
 
-        setStats(statsRes.data)
-        setComplaints(complaintsRes.data.complaints || [])
-        setError(null)
-      } catch (err: any) {
-        const errorMessage = err.response?.data?.detail || 'Failed to fetch data'
-        setError(errorMessage)
-      } finally {
-        setLoading(false)
-      }
+    const onComplaintStatusChanged = () => {
+      fetchData()
     }
 
-    fetchData()
+    window.addEventListener('complaint-status-changed', onComplaintStatusChanged)
+    return () => window.removeEventListener('complaint-status-changed', onComplaintStatusChanged)
   }, [user, statusFilter, priorityFilter, navigate])
 
   const filteredComplaints = complaints.filter((c) => {
@@ -225,7 +232,6 @@ export default function Dashboard() {
                       <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700">Description</th>
                       <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700">Status</th>
                       <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700">Priority</th>
-                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700">Location</th>
                       <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700">Date</th>
                     </tr>
                   </thead>
@@ -250,9 +256,6 @@ export default function Dashboard() {
                           </td>
                           <td className={`px-6 py-3 text-sm font-semibold ${getPriorityColor(complaint.priority)}`}>
                             {complaint.priority}
-                          </td>
-                          <td className="px-6 py-3 text-sm text-gray-600">
-                            {complaint.location_address || `(${complaint.location_lat.toFixed(2)}, ${complaint.location_lon.toFixed(2)})`}
                           </td>
                           <td className="px-6 py-3 text-sm text-gray-600">
                             {formatDate(complaint.created_at)}

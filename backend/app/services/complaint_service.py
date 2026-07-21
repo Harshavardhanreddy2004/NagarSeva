@@ -91,14 +91,22 @@ class ComplaintService:
         """List complaints with filters."""
         query = db.query(Complaint)
 
-        if user_id:
+        if user_id is not None:
             query = query.filter(Complaint.user_id == user_id)
 
         if status:
-            query = query.filter(Complaint.status == status)
+            try:
+                status_enum = ComplaintStatus(status)
+                query = query.filter(Complaint.status == status_enum)
+            except ValueError:
+                pass
 
         if priority:
-            query = query.filter(Complaint.priority == priority)
+            try:
+                priority_enum = Priority(priority)
+                query = query.filter(Complaint.priority == priority_enum)
+            except ValueError:
+                pass
 
         total = query.count()
         complaints = query.order_by(Complaint.created_at.desc()).offset(offset).limit(limit).all()
